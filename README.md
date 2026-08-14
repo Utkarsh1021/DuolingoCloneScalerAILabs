@@ -4,7 +4,7 @@ A functional clone of the Duolingo web application that replicates Duolingo's de
 
 ## Demo
 
-[Live Demo Link](duolingo-clone-scaler-ai-labs.vercel.app)
+[Live Demo Link](https://duolingo-clone-scaler-ai-labs.vercel.app/learn)
 
 ## Features
 
