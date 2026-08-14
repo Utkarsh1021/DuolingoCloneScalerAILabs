@@ -47,7 +47,7 @@ npm run lint
 
 ## Adding New Features
 
-1. **New Exercise Type**: Add the type to the `Exercise` model, create a new component in `frontend/components/lesson/`, and update the `ExerciseRenderer` switch in `LessonPlayer.tsx`
+1. **New Exercise Type**: Add the type to the `Exercise` model, create a new component in `frontend/components/lesson/`, and update the `ExerciseRenderer` switch in `frontend/components/lesson/ExerciseRenderer.tsx`
 
 2. **New API Endpoint**: Add the route in `backend/app/api/`, create the service logic in `backend/app/services/`, and update the frontend hook in `frontend/hooks/`
 

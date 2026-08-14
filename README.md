@@ -10,15 +10,16 @@ A functional clone of the Duolingo web application that replicates Duolingo's de
 
 ### Learning Path / Skill Tree
 
-- Visual path/tree of units and skills with lock/unlock progression
-- Completed vs available vs locked states
-- Progress rings/crowns per skill
+- Visual winding **road** connecting milestone skills (Duolingo-style), green for completed, grey for locked
+- Completed vs available vs locked states with crown/check badges
+- Current skill highlighted with a START / CONTINUE bubble
 - Top bar showing streak, XP, hearts, and gems
 
 ### Lesson Player (Core Loop)
 
 - Multiple exercise types: multiple choice, translate (word bank), match pairs, fill in the blank, and type-the-answer
-- Immediate correct/incorrect feedback with signature feedback bar
+- Immediate correct/incorrect feedback with signature feedback bar + shake animation on wrong answers
+- Distinct **sound effects** for correct vs wrong answers (Web Audio API, no audio files)
 - Progress bar across the lesson
 - Hearts system: lose one on wrong answer; lesson end/failure handled
 - XP award and skill progress tracking on completion
@@ -49,8 +50,8 @@ A functional clone of the Duolingo web application that replicates Duolingo's de
 
 - **Frontend**: Next.js 16 with TypeScript, Tailwind CSS
 - **Backend**: FastAPI with Python 3.10
-- **Database**: SQLite
-- **UI Components**: DaisyUI, custom components
+- **Database**: SQLite with SQLAlchemy 2.x ORM
+- **UI Components**: custom Tailwind components (no external UI kit)
 
 ## Architecture
 
@@ -164,42 +165,70 @@ UserSkillProgress
 UserAchievement
   id: INTEGER (PK)
   user_id: INTEGER (FK -> User.id, ondelete="CASCADE")
-  title: TEXT (not null)
-  description: TEXT (nullable)
+  achievement_id: INTEGER (FK -> Achievement.id, ondelete="CASCADE")
   earned_at: DATETIME (timezone-aware, default: func.now())
+```
+
+#### UserDailyActivity Model
+
+```text
+UserDailyActivity
+  id: INTEGER (PK)
+  user_id: INTEGER (FK -> User.id, ondelete="CASCADE")
+  activity_date: DATE (not null)
+  exercises_completed: INTEGER (default: 0)
+  correct_answers: INTEGER (default: 0)
+  hearts_lost: INTEGER (default: 0)
+  xp_earned: INTEGER (default: 0)
+  streak_before: INTEGER (default: 0)
+  streak_after: INTEGER (default: 0)
+  created_at: DATETIME (default: func.now())
 ```
 
 ### API Overview
 
 #### User Endpoints
 
-- `GET /api/user` - Get current user profile
-- `POST /api/user/reset-streak` - Reset user streak (testing)
+- `GET /api/user` - Get the current (default) user profile including `xp_today` and `earned_achievement_ids`
+- `POST /api/me/reset-streak` - Reset user streak (testing)
+- `POST /api/me/refill-hearts` - Refill hearts to max for `REFILL_GEM_COST` gems
 
 #### Path Endpoints
 
-- `GET /api/path` - Get the learning path with units and skills
+- `GET /api/path` - Get the learning path with units and skills (empty units/skills are skipped)
 
 #### Lesson Endpoints
 
-- `POST /api/lessons/{lessonId}/start` - Start a lesson
+- `POST /api/lessons/{lessonId}/start` - Start a lesson (returns exercises + runtime state)
 - `POST /api/lessons/{lessonId}/answer` - Process answer to exercise
-- `POST /api/lessons/{lessonId}/complete` - Complete a lesson
+  - Request: `{"exercise_id": int, "answer": string}`
+- `POST /api/lessons/{lessonId}/complete` - Complete a lesson (XP, crowns, unlock next, achievements)
 
 #### Leaderboard
 
-- `GET /api/leaderboard` - Get leaderboard entries
+- `GET /api/leaderboard` - Get leaderboard entries (rank, name, xp, streak)
 
 ### Seed Data
 
 The application comes pre-seeded with:
 
 - **1 course**: Spanish
-- **3 units**: Basics, Greetings, Food
-- **5 skills**: Greetings (in Unit 2), Food (in Unit 3), Family (unlocks after Greetings), Numbers (unlocks after Family), Common Phrases
-- **9 lessons** across the skills
-- **~60 exercises** covering all 5 exercise types
-- **1 default user**: "Utkarsh" with 0 XP, 0 streak, 5 hearts, 120 gems
+- **3 units**: Basics (empty, hidden from the path), Greetings, Food
+- **5 skills**: Greetings (3 lessons) and Family (1 lesson, unlocks after Greetings) in unit "Greetings"; Food (2 lessons) in unit "Food"; Numbers and Common Phrases (locked, no lessons yet)
+- **6 lessons** across 3 skills
+- **16 exercises** covering all 5 exercise types: 6 multiple choice, 3 word bank, 3 fill blank, 3 type answer, 1 match pairs
+- **4 achievements**: First Lesson, 7 Day Streak, XP Hunter, Perfect Lesson
+- **1 default user**: "Utkarsh" with 0 XP, 0 streak, 5 hearts, 1000 gems (enough for a few heart refills), `daily_goal` 20
+- **7 leaderboard rivals**: Emma, Liam, Olivia, Noah, Ava, Mia, Lucas
+
+### Tests
+
+Backend has 25 passing pytest tests under `backend/tests/` (API flows, streak calculation, heart regeneration). Run them with:
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+```
 
 ### Design Decisions
 
@@ -223,6 +252,7 @@ The application comes pre-seeded with:
    - Wrong answer: -1 heart
    - If hearts reach 0: show "Out of Hearts" modal
    - Regeneration: 1 heart every 30 minutes, calculated lazily
+   - Refill: spend `REFILL_GEM_COST` (350) gems to restore all 5 hearts instantly
 
 ### Local Setup
 
@@ -234,21 +264,38 @@ python -m venv .venv
 pip install -r requirements.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
-# Frontend
+# Frontend (in a second terminal)
 cd frontend
 npm install
 npm run dev
 ```
 
+The frontend proxies `/api/*` to the backend via `next.config.ts` rewrites, so no extra config is needed. The database is seeded automatically on startup (`SEED_ON_STARTUP=True`). To start from a clean slate, delete `backend/duolingo.db` while the backend is stopped and restart it.
+
 ### Environment Variables
 
-No environment variables are required for basic operation. The backend uses SQLite by default with a database file `duolingo.db` in the backend directory.
+No environment variables are required for basic operation.
+
+- `NEXT_PUBLIC_API_URL` (frontend, optional): absolute backend URL when the proxy is not used
+- `DATABASE_URL` (backend, optional): SQLAlchemy URL, defaults to `sqlite:///backend/duolingo.db`
 
 ### Deployment
 
-Deploy the frontend to Vercel or Netlify, and the backend to Render, Railway, or any Python-capable cloud service.
+**Backend → Render**
 
-**Important**: SQLite on some cloud platforms can be ephemeral unless you configure persistent storage. For this assignment, seed the DB on deployment and make the persistence expectation clear.
+1. Push the repo to GitHub.
+2. In Render, create a **New Web Service** and point it at the repo's `backend/` root.
+3. Build command: `pip install -r requirements.txt`
+4. Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+5. SQLite file storage is ephemeral on Render's free tier — for persistent progress use a managed Postgres and set `DATABASE_URL`, or re-seed on each deployment with `SEED_ON_STARTUP=True` (default).
+
+**Frontend → Vercel**
+
+1. In Vercel, import the repo and set **Root Directory** to `frontend`.
+2. Framework preset: **Next.js** (auto-detected).
+3. Set build command `npm run build` (dev) and output `default` (Vercel handles it).
+4. Set the environment variable `NEXT_PUBLIC_API_URL` to your Render backend URL, e.g. `https://your-app.onrender.com`.
+5. Deploy. Because production requests cross origin, ensure Render's CORS `CORS_ORIGINS` in `backend/app/config.py` includes your Vercel domain.
 
 ### Assumptions
 
@@ -272,46 +319,38 @@ Deploy the frontend to Vercel or Netlify, and the backend to Render, Railway, or
 backend/
   app/
     main.py          # FastAPI app with startup seeding
-    db/              # Database session and seeding
-    config.py        # Application configuration
-    models/          # SQLAlchemy models (base.py, course.py, user.py, skill.py, unit.py, lesson.py, exercise.py)
-    api/             # API routes (path.py, users.py)
-    services/        # Business logic (heart_service.py, lesson_service.py, streak_service.py)
-    db/              # Database initialization
-    tests/           # Tests
+    db/              # Database session + get_db (commit/rollback) + seeding
+    config.py        # Application configuration (gems, XP, hearts, CORS)
+    models/          # SQLAlchemy models (base.py, course.py, user.py)
+    api/             # API routes (path.py, users.py, lessons.py, leaderboard.py)
+    schemas/         # Pydantic response models (course.py, user.py, progress.py)
+    services/        # Business logic (heart_service.py, lesson_service.py, streak_service.py, achievement_service.py)
+  tests/             # Pytest suite (conftest.py, test_api.py, test_streak_service.py, test_heart_service.py)
   requirements.txt
-  README.md
+  pytest.ini
 
 frontend/
   app/               # Next.js app router
-    layout.tsx
-    page.tsx
-    learn/
-      page.tsx
+    (main)/          # Sidebar layout group: learn/, profile/, leaderboard/, settings/, page.tsx
     lesson/
       [lessonId]/
-        page.tsx
-    profile/
-      page.tsx
-    leaderboard/
-      page.tsx
+        page.tsx     # Lesson player (uses ExerciseRenderer)
+    layout.tsx
     globals.css
   components/
+    icon.tsx         # SVG icon set
     layout/          # Sidebar, TopBar
-    path/            # Skill tree components
-    lesson/          # Lesson player and exercise components
-    gamification/    # XP, streaks, hearts displays
-    ui/              # Reusable UI components
-  lib/
-    api.ts           # API client
-    types.ts         # Type definitions
-    utils.ts         # Utility functions
+    lesson/          # ExerciseRenderer + per-type renderers (MultipleChoice, WordBank, MatchPairs, FillBlank, TypeAnswer, types.ts)
+    ui/              # Reusable UI (Modal, Toast, Confetti)
   hooks/
     useUserProgress.ts    # User progress hook
-    useLesson.ts          # Lesson state hook
+    useLesson.ts          # Lesson state machine hook (start/answer/advance/finish/retry/refill)
+  lib/
+    api.ts           # API client (proxied through /api/*)
+    types.ts         # Type definitions + XP_VALUES
+    sounds.ts        # Procedural Web Audio correct/wrong sound effects
+  next.config.ts     # /api/* rewrite to backend
   package.json
-  tailwind.config.cjs
-  package-lock.json
 ```
 
 ## Evaluation Criteria

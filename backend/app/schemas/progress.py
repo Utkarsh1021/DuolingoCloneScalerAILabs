@@ -60,6 +60,7 @@ class SkillPathResponse(BaseModel):
     progress: int = 0
     crowns: int = 0
     lessons_count: int = 0
+    first_lesson_id: Optional[int] = None
 
     class Config:
         from_attributes = True

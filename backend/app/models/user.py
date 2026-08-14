@@ -3,6 +3,7 @@
 from datetime import datetime, date
 from sqlalchemy import (
     DateTime,
+    Date,
     Integer,
     String,
     ForeignKey,
@@ -31,7 +32,7 @@ class User(Base):
     gems: Mapped[int] = mapped_column(default=120)
     daily_goal: Mapped[int] = mapped_column(default=20)
     last_active_date: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=func.now()
+        DateTime(timezone=True), default=None, nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=func.now()
@@ -145,7 +146,7 @@ class UserDailyActivity(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("user.id", ondelete="CASCADE")
     )
-    activity_date: Mapped[date] = mapped_column(DateTime(timezone=True))
+    activity_date: Mapped[date] = mapped_column(Date(), nullable=False)
     exercises_completed: Mapped[int] = mapped_column(default=0)
     correct_answers: Mapped[int] = mapped_column(default=0)
     hearts_lost: Mapped[int] = mapped_column(default=0)

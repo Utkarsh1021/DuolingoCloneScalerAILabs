@@ -19,10 +19,13 @@ class UserSummary(BaseModel):
 
 class UserDetail(UserSummary):
     email: str
+    avatar: Optional[str] = None
     daily_goal: int
     last_active_date: Optional[datetime]
     total_skills_completed: int = 0
     achievements_count: int = 0
+    earned_achievement_ids: list[int] = []
+    xp_today: int = 0
 
     class Config:
         from_attributes = True

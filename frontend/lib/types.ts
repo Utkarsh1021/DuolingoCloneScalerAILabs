@@ -11,38 +11,6 @@ export type ExerciseType =
   | "fill_blank"
   | "type_answer";
 
-// Exercise data shapes
-export interface MCQData {
-  options: string[];
-  answer: string;
-}
-
-export interface WordBankData {
-  words: string[];
-  answer: string;
-}
-
-export interface MatchPairsData {
-  pairs: [string, string][];
-}
-
-export interface FillBlankData {
-  question: string;
-  answer: string;
-}
-
-export interface TypeAnswerData {
-  question: string;
-}
-
-// Union for exercise data
-export exerciseData:
-  | { type: "multiple_choice"; data: MCQData }
-  | { type: "word_bank"; data: WordBankData }
-  | { type: "match_pairs"; data: MatchPairsData }
-  | { type: "fill_blank"; data: FillBlankData }
-  | { type: "type_answer"; data: TypeAnswerData };
-
 // Single exercise record
 export interface Exercise {
   id: number;
@@ -50,7 +18,7 @@ export interface Exercise {
   type: ExerciseType;
   question: string;
   correct_answer: string;
-  data?: Record<string, unknown>;
+  data?: Record<string, unknown> | null;
   order_index: number;
 }
 
@@ -64,22 +32,22 @@ export interface Lesson {
   xp_reward: number;
 }
 
-// Skill progress
+// Skill progress (path node)
 export interface SkillProgress {
   id: number;
-  unit_id: number;
   title: string;
   description: string | null;
   order_index: number;
   status: "locked" | "available" | "completed";
   progress: number; // 0-100
   crowns: number;
+  lessons_count: number;
+  first_lesson_id?: number | null;
 }
 
 // Unit data
 export interface Unit {
   id: number;
-  course_id: number;
   title: string;
   description: string | null;
   order_index: number;
@@ -87,14 +55,15 @@ export interface Unit {
 }
 
 // Full path data
-export interface PathUnits {
+export interface PathData {
   units: Unit[];
 }
 
 // User profile
-export interface UserStats {
+export interface UserProfile {
   id: number;
   name: string;
+  email: string;
   xp: number;
   streak: number;
   hearts: number;
@@ -103,6 +72,8 @@ export interface UserStats {
   last_active_date: string | null;
   total_skills_completed: number;
   achievements_count: number;
+  earned_achievement_ids: number[];
+  xp_today: number;
   avatar: string | null;
 }
 
@@ -115,20 +86,45 @@ export interface LeaderboardEntry {
   avatar: string | null;
 }
 
-// Lesson state management
-export interface LessonState {
-  lessonId: number;
-  currentExerciseIndex: number;
+// Lesson start state returned by the backend
+export interface LessonStart {
+  lesson_id: number;
+  title: string;
+  xp_reward: number;
+  skill_title: string;
   hearts: number;
-  xpEarned: number;
-  completedExerciseIds: number[];
+  current_exercise_index: number;
+  xp_earned: number;
+  completed_exercise_ids: number[];
   status: "idle" | "active" | "completed" | "out_of_hearts";
-  currentExercise: Exercise | null;
-  feedback: "correct" | "incorrect" | null;
-  showFeedback: boolean;
+  exercises: Exercise[];
 }
 
-// Achievement definitions (from the 'achievements' table)
+// Answer result
+export interface AnswerResult {
+  correct: boolean;
+  correct_answer: string;
+  xp_earned: number;
+  hearts_remaining: number;
+  hearts_lost: number;
+  message: string;
+}
+
+// Lesson completion result
+export interface CompleteResult {
+  completed: boolean;
+  xp_earned: number;
+  total_xp: number;
+  streak: number;
+  skill_progress: number;
+  skill_completed: boolean;
+  hearts_lost: number;
+  message: string;
+  unlocked_skill: string | null;
+  earned_achievements: string[];
+}
+
+// Achievement definitions
 export interface AchievementDefinition {
   id: number;
   name: string;
@@ -136,15 +132,6 @@ export interface AchievementDefinition {
   icon: string | null;
   requirement_type: string;
   requirement_value: number;
-}
-
-// User achievements (from the 'user_achievements' table - which user earned which achievement)
-export interface UserAchievement {
-  id: number;
-  user_id: number;
-  achievement_id: number;
-  earned_at: string;
-  achievement: AchievementDefinition;
 }
 
 // XP gain types

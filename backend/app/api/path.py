@@ -1,21 +1,13 @@
 """Path / course API routes."""
 
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-from fastapi import APIRouter, Depends
-
-from ...db import get_db
-from ...models.course import Course, Unit, Skill
-from ...models.user import User
-from ...schemas.course import (
-    CourseSummary,
-    UnitSummary,
-    SkillSummary,
-    LessonSummary,
-    SkillPathResponse,
-    PathUnitResponse,
-)
+from app.db import get_db
+from app.models.course import Course
+from app.models.user import User, UserSkillProgress
+from app.schemas.progress import PathUnitResponse, SkillPathResponse
 
 
 router = APIRouter(prefix="/api", tags=["path"])
@@ -24,41 +16,49 @@ router = APIRouter(prefix="/api", tags=["path"])
 @router.get("/path", response_model=list[PathUnitResponse])
 def get_path(db: Session = Depends(get_db)):
     """Get the learning path with units and skills."""
-    course = db.scalar(select(Course))
+    course = db.scalar(select(Course).order_by(Course.id))
     if not course:
         return []
 
-    units = course.units
+    user = db.scalar(select(User).order_by(User.id))
     result = []
 
-    for unit in units:
+    for unit in sorted(course.units, key=lambda u: u.order_index):
+        if not unit.skills:
+            continue
+
         skills_data = []
-        for skill in unit.skills:
-            # Determine skill status based on user progress
-            user = db.scalar(select(User))
-            user_skill = (
-                db.query(...).filter(...).first()
-            )
+        for skill in sorted(unit.skills, key=lambda s: s.order_index):
+            first_lesson = None
+            if skill.lessons:
+                first_lesson = min(skill.lessons, key=lambda l: l.order_index)
 
-            # For now, determine status simply:
-            # If user_skill.completed -> "completed"
-            # If user_skill exists and progress > 0 -> "available"
-            # Otherwise -> "locked"
+            progress = 0
+            crowns = 0
+            completed = False
+            started = False
 
-            if user_skill and user_skill.completed:
+            if user:
+                up = (
+                    db.query(UserSkillProgress)
+                    .filter(
+                        UserSkillProgress.user_id == user.id,
+                        UserSkillProgress.skill_id == skill.id,
+                    )
+                    .first()
+                )
+                if up:
+                    progress = up.progress
+                    crowns = up.crowns
+                    completed = up.completed
+                    started = up.progress > 0 or up.completed
+
+            if completed:
                 status = "completed"
-                progress = user_skill.progress
-                crowns = user_skill.crowns
-            elif user_skill and user_skill.progress > 0:
+            elif started:
                 status = "available"
-                progress = user_skill.progress
-                crowns = user_skill.crowns
             else:
-                status = "locked"
-                progress = 0
-                crowns = 0
-
-            lessons_count = len(skill.lessons) if skill.lessons else 0
+                status = "available" if skill.order_index == 1 else "locked"
 
             skills_data.append(
                 SkillPathResponse(
@@ -69,7 +69,8 @@ def get_path(db: Session = Depends(get_db)):
                     status=status,
                     progress=progress,
                     crowns=crowns,
-                    lessons_count=lessons_count,
+                    lessons_count=len(skill.lessons) if skill.lessons else 0,
+                    first_lesson_id=first_lesson.id if first_lesson else None,
                 )
             )
 

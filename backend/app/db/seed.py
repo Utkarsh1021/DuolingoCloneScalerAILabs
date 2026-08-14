@@ -1,31 +1,17 @@
-"""Database session and initialization."""
+"""Database seeding: course content + a default user + demo leaderboard rivals."""
 
-from datetime import datetime
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from datetime import datetime, timedelta
+from sqlalchemy.orm import Session
 
 from app.models.base import Base
-from app.config import settings
-
-engine = create_engine(
-    settings.DATABASE_URL,
-    echo=False,
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
+from app.models.course import Course, Unit, Skill, Lesson, Exercise
+from app.models.user import (
+    User,
+    UserSkillProgress,
+    Achievement,
+    UserAchievement,
 )
-
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-
-def get_db():
-    """Dependency to get DB session."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+from app.db import engine, SessionLocal
 
 
 def create_tables():
@@ -34,17 +20,30 @@ def create_tables():
 
 
 def seed_database(db: Session):
-    """Seed the database with sample course content and a default user."""
-    from app.models.course import Course, Unit, Skill, Lesson, Exercise
-    from app.models.user import User, UserSkillProgress, UserAchievement, Achievement, LessonAttempt, UserDailyActivity
+    """Seed the database with sample course content and demo users."""
     from sqlalchemy import select
 
-    # Check if already seeded
-    existing_user = db.scalar(select(User).limit(1))
-    if existing_user:
-        return  # Already seeded
+    create_tables()
 
-    # Create course
+    # ---- Course content ----
+    existing = db.scalar(select(Course).limit(1))
+    if existing is None:
+        _seed_course(db)
+
+    # ---- Default (logged-in) user ----
+    user = db.scalar(select(User).limit(1))
+    if user is None:
+        user = _seed_main_user(db)
+
+    # ---- Demo leaderboard rivals ----
+    if db.scalar(select(User).filter(User.email.like("%@duo.demo"))) is None:
+        _seed_demo_users(db)
+
+    db.commit()
+    print("Database seeded successfully!")
+
+
+def _seed_course(db: Session):
     spanish_course = Course(
         name="Spanish",
         language="Spanish",
@@ -53,324 +52,369 @@ def seed_database(db: Session):
     db.add(spanish_course)
     db.flush()
 
-    # Unit 1: Basics
-    unit1 = Unit(
+    # Units
+    unit_basics = Unit(
         course_id=spanish_course.id,
         title="Basics",
         description="Basic greetings and expressions",
         order_index=1,
     )
-    db.add(unit1)
-    db.flush()
-
-    # Unit 2: Greetings
-    unit2 = Unit(
+    unit_greetings = Unit(
         course_id=spanish_course.id,
         title="Greetings",
         description="Common greetings and salutations",
         order_index=2,
     )
-    db.add(unit2)
-    db.flush()
-
-    # Unit 3: Food
-    unit3 = Unit(
+    unit_food = Unit(
         course_id=spanish_course.id,
         title="Food",
         description="Food and dining vocabulary",
         order_index=3,
     )
-    db.add(unit3)
+    db.add_all([unit_basics, unit_greetings, unit_food])
     db.flush()
 
-    # Skill 1: Greetings (in Unit 2)
-    skill1 = Skill(
-        unit_id=unit2.id,
+    # Skills
+    skill_greetings = Skill(
+        unit_id=unit_greetings.id,
         title="Greetings",
         description="Basic greeting and farewelling",
         order_index=1,
     )
-    db.add(skill1)
+    db.add(skill_greetings)
     db.flush()
 
-    # Skill 2: Food (in Unit 3)
-    skill2 = Skill(
-        unit_id=unit3.id,
+    skill_food = Skill(
+        unit_id=unit_food.id,
         title="Food",
         description="Ordering and food vocabulary",
         order_index=1,
     )
-    db.add(skill2)
+    db.add(skill_food)
     db.flush()
 
-    # Skill 3: Family (in Unit 2 - unlocks after Greetings)
-    skill3 = Skill(
-        unit_id=unit2.id,
+    skill_family = Skill(
+        unit_id=unit_greetings.id,
         title="Family",
         description="Family member vocabulary",
         order_index=2,
-        required_skill_id=skill1.id,  # Unlocks after Greetings
+        required_skill_id=skill_greetings.id,
     )
-    db.add(skill3)
+    db.add(skill_family)
     db.flush()
 
-    # Skill 4: Numbers (in Unit 2 - unlocks after Family)
-    skill4 = Skill(
-        unit_id=unit2.id,
+    skill_numbers = Skill(
+        unit_id=unit_greetings.id,
         title="Numbers",
         description="Number vocabulary",
         order_index=3,
-        required_skill_id=skill3.id,  # Unlocks after Family
+        required_skill_id=skill_family.id,
     )
-    db.add(skill4)
+    db.add(skill_numbers)
     db.flush()
 
-    # Skill 5: Common Phrases (in Unit 2)
-    skill5 = Skill(
-        unit_id=unit2.id,
+    skill_phrases = Skill(
+        unit_id=unit_greetings.id,
         title="Common Phrases",
         description="Everyday useful phrases",
         order_index=4,
+        required_skill_id=skill_numbers.id,
     )
-    db.add(skill5)
+    db.add(skill_phrases)
     db.flush()
 
-    # Lessons for Skill 1: Greetings
-    lesson1_1 = Lesson(
-        skill_id=skill1.id,
+    # Lessons
+    lesson_greetings = Lesson(
+        skill_id=skill_greetings.id,
         title="Greetings Basics",
         order_index=1,
         xp_reward=10,
     )
-    db.add(lesson1_1)
-    db.flush()
-
-    lesson1_2 = Lesson(
-        skill_id=skill1.id,
+    lesson_polite = Lesson(
+        skill_id=skill_greetings.id,
         title="Polite Phrases",
         order_index=2,
         xp_reward=10,
     )
-    db.add(lesson1_2)
-    db.flush()
-
-    lesson1_3 = Lesson(
-        skill_id=skill1.id,
+    lesson_practice = Lesson(
+        skill_id=skill_greetings.id,
         title="Greeting Practice",
         order_index=3,
         xp_reward=10,
     )
-    db.add(lesson1_3)
-    db.flush()
-
-    # Lessons for Skill 2: Food
-    lesson2_1 = Lesson(
-        skill_id=skill2.id,
+    lesson_food = Lesson(
+        skill_id=skill_food.id,
         title="Ordering Food",
         order_index=1,
         xp_reward=10,
     )
-    db.add(lesson2_1)
-    db.flush()
-
-    lesson2_2 = Lesson(
-        skill_id=skill2.id,
+    lesson_menu = Lesson(
+        skill_id=skill_food.id,
         title="Menu Vocabulary",
         order_index=2,
         xp_reward=10,
     )
-    db.add(lesson2_2)
-    db.flush()
-
-    # Lessons for Skill 3: Family
-    lesson3_1 = Lesson(
-        skill_id=skill3.id,
+    lesson_family = Lesson(
+        skill_id=skill_family.id,
         title="Family Members",
         order_index=1,
         xp_reward=10,
     )
-    db.add(lesson3_1)
+    db.add_all(
+        [
+            lesson_greetings,
+            lesson_polite,
+            lesson_practice,
+            lesson_food,
+            lesson_menu,
+            lesson_family,
+        ]
+    )
     db.flush()
 
-    # Exercises for lesson1_1 (Greetings Basics)
-    exercises_l1_1 = [
-        Exercise(
-            lesson_id=lesson1_1.id,
-            type="multiple_choice",
-            question="What does 'Hola' mean?",
-            correct_answer="Hello",
-            data="{\"options\": [\"Hello\", \"Goodbye\", \"Thank you\", \"Please\"]}",
-            order_index=1,
-        ),
-        Exercise(
-            lesson_id=lesson1_1.id,
-            type="multiple_choice",
-            question="What does 'Adiós' mean?",
-            correct_answer="Goodbye",
-            data="{\"options\": [\"Hello\", \"Goodbye\", \"Thank you\", \"Please\"]}",
-            order_index=2,
-        ),
-        Exercise(
-            lesson_id=lesson1_1.id,
-            type="word_bank",
-            question="Translate: I am a student",
-            correct_answer="Yo soy estudiante",
-            data="{\"words\": [\"soy\", \"estudiante\", \"yo\"]}",
-            order_index=3,
-        ),
-        Exercise(
-            lesson_id=lesson1_1.id,
-            type="match_pairs",
-            data="{\"pairs\": [\"Hola\", \"Hello\"], [\"Adiós\", \"Goodbye\"], [\"Gracias\", \"Thank you\"]}",
-            order_index=4,
-        ),
-        Exercise(
-            lesson_id=lesson1_1.id,
-            type="fill_blank",
-            question="Fill in the blank: ______ means hello",
-            correct_answer="Hola",
-            order_index=5,
-        ),
-        Exercise(
-            lesson_id=lesson1_1.id,
-            type="type_answer",
-            question="Type the Spanish word for 'Hello':",
-            correct_answer="Hola",
-            order_index=6,
-        ),
-    ]
-    for ex in exercises_l1_1:
-        db.add(ex)
+    _seed_exercises(db, lesson_greetings.id)
+    _seed_extra_exercises(db, lesson_polite.id, lesson_practice.id)
+    _seed_food_exercises(db, lesson_food.id, lesson_menu.id)
+    _seed_family_exercises(db, lesson_family.id)
 
-    # Exercises for lesson1_2 (Polite Phrases)
-    exercises_l1_2 = [
-        Exercise(
-            lesson_id=lesson1_2.id,
-            type="multiple_choice",
-            question="What does 'Por favor' mean?",
-            correct_answer="Please",
-            data="{\"options\": [\"Hello\", \"Goodbye\", \"Thank you\", \"Please\"]}",
-            order_index=1,
-        ),
-        Exercise(
-            lesson_id=lesson1_2.id,
-            type="type_answer",
-            question="Type the Spanish word for 'Thank you':",
-            correct_answer="Gracias",
-            order_index=2,
-        ),
-    ]
-    for ex in exercises_l1_2:
-        db.add(ex)
 
-    # Exercises for lesson1_3 (Greeting Practice)
-    exercises_l1_3 = [
+def _add_exercise(db: Session, lesson_id: int, type_: str, order: int, **kwargs):
+    db.add(
         Exercise(
-            lesson_id=lesson1_3.id,
-            type="multiple_choice",
-            question="Which is a greeting?",
-            correct_answer="Hola",
-            data="{\"options\": [\"Casa\", \"Perro\", \"Hola\", \"Mesa\"]}",
-            order_index=1,
-        ),
-    ]
-    for ex in exercises_l1_3:
-        db.add(ex)
+            lesson_id=lesson_id,
+            type=type_,
+            order_index=order,
+            **kwargs,
+        )
+    )
 
-    # Exercises for lesson2_1 (Ordering Food)
-    exercises_l2_1 = [
-        Exercise(
-            lesson_id=lesson2_1.id,
-            type="multiple_choice",
-            question="What does 'Quiero' mean?",
-            correct_answer="I want",
-            data="{\"options\": [\"I want\", \"I like\", \"I need\", \"I have\"]}",
-            order_index=1,
-        ),
-        Exercise(
-            lesson_id=lesson2_1.id,
-            type="word_bank",
-            question="Translate: I want water, please",
-            correct_answer="Quiero agua, por favor",
-            data="{\"words\": [\"quiero\", \"agua\", \"por\", \"favor\"]}",
-            order_index=2,
-        ),
-    ]
-    for ex in exercises_l2_1:
-        db.add(ex)
 
-    # Exercises for lesson2_2 (Menu Vocabulary)
-    exercises_l2_2 = [
-        Exercise(
-            lesson_id=lesson2_2.id,
-            type="fill_blank",
-            question="Fill in the blank: ______ es delicioso",
-            correct_answer="La comida",
-            order_index=1,
-        ),
-    ]
-    for ex in exercises_l2_2:
-        db.add(ex)
+def _seed_exercises(db: Session, lesson_id: int):
+    _add_exercise(
+        db,
+        lesson_id,
+        "multiple_choice",
+        1,
+        question="What does 'Hola' mean?",
+        correct_answer="Hello",
+        data='{"options": ["Hello", "Goodbye", "Thank you", "Please"]}',
+    )
+    _add_exercise(
+        db,
+        lesson_id,
+        "multiple_choice",
+        2,
+        question="What does 'Adiós' mean?",
+        correct_answer="Goodbye",
+        data='{"options": ["Hello", "Goodbye", "Thank you", "Please"]}',
+    )
+    _add_exercise(
+        db,
+        lesson_id,
+        "word_bank",
+        3,
+        question="Translate: I am a student",
+        correct_answer="Yo soy estudiante",
+        data='{"words": ["soy", "estudiante", "yo"]}',
+    )
+    _add_exercise(
+        db,
+        lesson_id,
+        "match_pairs",
+        4,
+        question="Match the translations",
+        correct_answer="",
+        data='{"pairs": [["Hola", "Hello"], ["Adiós", "Goodbye"], ["Gracias", "Thank you"]]}',
+    )
+    _add_exercise(
+        db,
+        lesson_id,
+        "fill_blank",
+        5,
+        question="Fill in the blank: ______ means hello",
+        correct_answer="Hola",
+    )
+    _add_exercise(
+        db,
+        lesson_id,
+        "type_answer",
+        6,
+        question="Type the Spanish word for 'Hello':",
+        correct_answer="Hola",
+    )
+    db.flush()
 
-    # Create default user
-    default_user = User(
+
+def _seed_extra_exercises(db: Session, polite_id: int, practice_id: int):
+    _add_exercise(
+        db,
+        polite_id,
+        "multiple_choice",
+        1,
+        question="What does 'Por favor' mean?",
+        correct_answer="Please",
+        data='{"options": ["Hello", "Goodbye", "Thank you", "Please"]}',
+    )
+    _add_exercise(
+        db,
+        polite_id,
+        "type_answer",
+        2,
+        question="Type the Spanish word for 'Thank you':",
+        correct_answer="Gracias",
+    )
+    _add_exercise(
+        db,
+        practice_id,
+        "multiple_choice",
+        1,
+        question="Which is a greeting?",
+        correct_answer="Hola",
+        data='{"options": ["Casa", "Perro", "Hola", "Mesa"]}',
+    )
+    _add_exercise(
+        db,
+        practice_id,
+        "word_bank",
+        2,
+        question="Translate: Goodbye my friend",
+        correct_answer="Adiós mi amigo",
+        data='{"words": ["Adiós", "mi", "amigo"]}',
+    )
+    db.flush()
+
+
+def _seed_food_exercises(db: Session, food_id: int, menu_id: int):
+    _add_exercise(
+        db,
+        food_id,
+        "multiple_choice",
+        1,
+        question="What does 'Quiero' mean?",
+        correct_answer="I want",
+        data='{"options": ["I want", "I like", "I need", "I have"]}',
+    )
+    _add_exercise(
+        db,
+        food_id,
+        "word_bank",
+        2,
+        question="Translate: I want water, please",
+        correct_answer="Quiero agua, por favor",
+        data='{"words": ["quiero", "agua", "por", "favor"]}',
+    )
+    _add_exercise(
+        db,
+        menu_id,
+        "fill_blank",
+        1,
+        question="Fill in the blank: ______ es delicioso",
+        correct_answer="La comida",
+    )
+    _add_exercise(
+        db,
+        menu_id,
+        "type_answer",
+        2,
+        question="Type the Spanish word for 'bread':",
+        correct_answer="Pan",
+    )
+    db.flush()
+
+
+def _seed_family_exercises(db: Session, lesson_id: int):
+    _add_exercise(
+        db,
+        lesson_id,
+        "multiple_choice",
+        1,
+        question="What does 'madre' mean?",
+        correct_answer="Mother",
+        data='{"options": ["Mother", "Father", "Sister", "Brother"]}',
+    )
+    _add_exercise(
+        db,
+        lesson_id,
+        "fill_blank",
+        2,
+        question="Fill in the blank: ______ means father",
+        correct_answer="Padre",
+    )
+    db.flush()
+
+
+def _seed_main_user(db: Session):
+    # last_active_date is None so the first live lesson activity starts the
+    # streak at 1 (instead of being treated as a same-day no-op on day one).
+    user = User(
         name="Utkarsh",
         email="utkarsh@example.com",
         xp=0,
         streak=0,
         hearts=5,
-        gems=120,
+        gems=1000,
         daily_goal=20,
-        last_active_date=datetime.now(),
+        last_active_date=None,
     )
-    db.add(default_user)
+    db.add(user)
     db.flush()
 
-    # Create user skill progress entries
-    skills = [skill1, skill2, skill3, skill4, skill5]
-    for skill in skills:
-        user_skill = UserSkillProgress(user_id=default_user.id, skill_id=skill.id)
-        db.add(user_skill)
+    # Give the default user one completed skill so the path feels alive
+    greetings = db.query(Skill).filter(Skill.title == "Greetings").first()
+    if greetings:
+        db.add(
+            UserSkillProgress(
+                user_id=user.id,
+                skill_id=greetings.id,
+                progress=100,
+                crowns=1,
+                completed=True,
+                updated_at=datetime.now(),
+            )
+        )
 
-    # Create achievement DEFINITIONS (the 'achievements' table)
+    # Achievement definitions
     achievements_def = [
-        Achievement(
-            name="First Lesson",
-            description="Complete your first lesson",
-            icon="🎯",
-            requirement_type="lessons_completed",
-            requirement_value=1,
-        ),
-        Achievement(
-            name="7 Day Streak",
-            description="Maintain a 7 day streak",
-            icon="🔥",
-            requirement_type="streak",
-            requirement_value=7,
-        ),
-        Achievement(
-            name="XP Hunter",
-            description="Earn 500 XP",
-            icon="⭐",
-            requirement_type="total_xp",
-            requirement_value=500,
-        ),
-        Achievement(
-            name="Perfect Lesson",
-            description="Complete a perfect lesson",
-            icon="💯",
-            requirement_type="perfect_lesson",
-            requirement_value=1,
-        ),
+        ("First Lesson", "Complete your first lesson", "🎯", "lessons_completed", 1),
+        ("7 Day Streak", "Maintain a 7 day streak", "🔥", "streak", 7),
+        ("XP Hunter", "Earn 500 XP", "⭐", "total_xp", 500),
+        ("Perfect Lesson", "Complete a perfect lesson", "💯", "perfect_lesson", 1),
     ]
-    for ach in achievements_def:
-        db.add(ach)
+    for name, desc, icon, req_type, req_value in achievements_def:
+        db.add(
+            Achievement(
+                name=name,
+                description=desc,
+                icon=icon,
+                requirement_type=req_type,
+                requirement_value=req_value,
+            )
+        )
+
+    return user
+
+
+def _seed_demo_users(db: Session):
+    rivals = [
+        ("Emma", "emma@duo.demo", 2450, 34, 5, 890),
+        ("Liam", "liam@duo.demo", 1985, 21, 4, 540),
+        ("Olivia", "olivia@duo.demo", 1520, 12, 5, 760),
+        ("Noah", "noah@duo.demo", 980, 8, 3, 210),
+        ("Ava", "ava@duo.demo", 620, 5, 5, 330),
+        ("Mia", "mia@duo.demo", 310, 3, 4, 90),
+        ("Lucas", "lucas@duo.demo", 120, 1, 5, 40),
+    ]
+    for name, email, xp, streak, hearts, gems in rivals:
+        db.add(
+            User(
+                name=name,
+                email=email,
+                xp=xp,
+                streak=streak,
+                hearts=hearts,
+                gems=gems,
+                daily_goal=20,
+                last_active_date=datetime.now() - timedelta(days=1),
+            )
+        )
     db.flush()
-
-    # NOTE: User achievements are NOT auto-awarded on creation.
-    # They are awarded dynamically when gameplay requirements are met
-    # (e.g., complete first lesson → First Lesson achievement, etc.)
-    # The existing 4 UserAchievement records below have been removed per review.
-
-    db.commit()
-    print("Database seeded successfully!")

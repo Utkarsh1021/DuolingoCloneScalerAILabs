@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     XP_PERFECT_BONUS: int = 5
     DEFAULT_DAILY_GOAL: int = 20
     DEFAULT_GEMS: int = 120
+    REFILL_GEM_COST: int = 350
 
     # Seed
     SEED_ON_STARTUP: bool = True

@@ -1,10 +1,11 @@
 """Main FastAPI application."""
 
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.db import SessionLocal, seed_database
+from app.api import path, users, lessons, leaderboard
 from app.config import settings
+from app.db import SessionLocal, create_tables
 
 app = FastAPI(
     title="Duolingo Clone API",
@@ -21,10 +22,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Routers
+app.include_router(path.router)
+app.include_router(users.router)
+app.include_router(lessons.router)
+app.include_router(leaderboard.router)
+
 
 @app.on_event("startup")
 def on_startup():
-    # Create database session and seed
+    from app.db.seed import seed_database
+
+    create_tables()
     db = SessionLocal()
     try:
         seed_database(db)
