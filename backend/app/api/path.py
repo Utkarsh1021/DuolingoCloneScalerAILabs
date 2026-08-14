@@ -23,6 +23,19 @@ def get_path(db: Session = Depends(get_db)):
     user = db.scalar(select(User).order_by(User.id))
     result = []
 
+    def skill_completed(skill_id: int) -> bool:
+        if not user:
+            return False
+        up = (
+            db.query(UserSkillProgress)
+            .filter(
+                UserSkillProgress.user_id == user.id,
+                UserSkillProgress.skill_id == skill_id,
+            )
+            .first()
+        )
+        return bool(up and up.completed)
+
     for unit in sorted(course.units, key=lambda u: u.order_index):
         if not unit.skills:
             continue
@@ -57,8 +70,10 @@ def get_path(db: Session = Depends(get_db)):
                 status = "completed"
             elif started:
                 status = "available"
+            elif skill.required_skill_id is None or skill_completed(skill.required_skill_id):
+                status = "available"
             else:
-                status = "available" if skill.order_index == 1 else "locked"
+                status = "locked"
 
             skills_data.append(
                 SkillPathResponse(

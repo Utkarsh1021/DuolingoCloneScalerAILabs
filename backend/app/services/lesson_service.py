@@ -225,8 +225,9 @@ class LessonService:
         xp_earned = settings.XP_LESSON_COMPLETE
         user.xp += xp_earned
 
-        # Unlock the next skill if it depends on this one
-        unlocked = None
+        # Unlock the next skill if it depends on this one.
+        # Persist a progress row so the unlock is reflected in the DB, not
+        # just in the response message.
         next_skill = (
             db.query(Skill)
             .filter(Skill.required_skill_id == skill.id)
@@ -234,7 +235,23 @@ class LessonService:
             .first()
         )
         if next_skill:
-            unlocked = next_skill
+            next_up = (
+                db.query(UserSkillProgress)
+                .filter(
+                    UserSkillProgress.user_id == user.id,
+                    UserSkillProgress.skill_id == next_skill.id,
+                )
+                .first()
+            )
+            if not next_up:
+                db.add(
+                    UserSkillProgress(
+                        user_id=user.id,
+                        skill_id=next_skill.id,
+                        progress=0,
+                        crowns=0,
+                    )
+                )
 
         today = date.today()
         streak_before = user.streak

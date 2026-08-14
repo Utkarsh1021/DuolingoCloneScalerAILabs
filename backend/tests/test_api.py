@@ -78,6 +78,59 @@ def test_lesson_complete_awards_achievement(seeded_client):
     assert "earned_achievements" in body
 
 
+def test_path_skill_unlocks_after_prerequisite_completed(seeded_client):
+    # The seeded default user already completed "Greetings" (skill 1),
+    # so "Family" (skill 3, required_skill_id=1) must be available.
+    def status_map():
+        units = seeded_client.get("/api/path").json()
+        return {
+            s["title"]: s["status"]
+            for u in units
+            for s in u["skills"]
+        }
+
+    statuses = status_map()
+    assert statuses["Greetings"] == "completed"
+    assert statuses["Family"] == "available"
+    assert statuses["Numbers"] == "locked"
+    assert statuses["Common Phrases"] == "locked"
+
+    # Complete the Family lesson (id 6) -> Numbers (required_skill_id=3)
+    # must become available and a progress row must be persisted.
+    start = seeded_client.post("/api/lessons/6/start").json()
+    assert start["status"] == "active"
+    for ex in start["exercises"]:
+        answer = ex["correct_answer"] or "matched"
+        res = seeded_client.post(
+            "/api/lessons/6/answer",
+            json={"exercise_id": ex["id"], "answer": answer},
+        )
+        assert res.status_code == 200
+    complete = seeded_client.post("/api/lessons/6/complete")
+    assert complete.status_code == 200
+    assert complete.json()["unlocked_skill"] == "Numbers"
+
+    statuses = status_map()
+    assert statuses["Family"] == "completed"
+    assert statuses["Numbers"] == "available"
+
+    db = db_module.SessionLocal()
+    try:
+        from app.models.user import UserSkillProgress
+
+        nums_up = (
+            db.query(UserSkillProgress)
+            .filter(
+                UserSkillProgress.user_id == 1,
+                UserSkillProgress.skill_id == 4,
+            )
+            .first()
+        )
+        assert nums_up is not None, "unlocked skill must have a persisted progress row"
+    finally:
+        db.close()
+
+
 def test_refill_full_hearts_is_noop(seeded_client):
     me = seeded_client.get("/api/user").json()
     res = seeded_client.post("/api/me/refill-hearts")
