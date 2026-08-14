@@ -128,7 +128,7 @@ flowchart LR
     P4 -->|record completion XP| D4
     P4 -->|summary + achievements| U
 
-    U -->|refill hearts (350 gems)| P5
+    U -->|refill hearts for gems| P5
     P5 -->|deduct gems, set hearts| D2
     P5 -->|new hearts/gems| U
 
