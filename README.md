@@ -68,6 +68,107 @@ Backend (FastAPI)
 Database (SQLite)
 ```
 
+### Data Flow Diagrams (DFD)
+
+#### DFD Level 0 — Context Diagram
+
+The whole system is one process; the learner is the only external entity. All state is persisted in the SQLite data store, and the FastAPI layer is the single path between the UI and the data.
+
+```mermaid
+flowchart LR
+    U(("Learner"))
+    U -->|1 browse path / open lesson / submit answer / refill hearts| SYS["Duolingo Clone\nSystem"]
+    SYS -->|learning path, exercises, grades, XP, streak, hearts, leaderboard| U
+    SYS <-->|read/write: courses, skills, lessons, exercises, user progress, activity, achievements| D[(SQLite)]
+```
+
+#### DFD Level 1 — Major Processes & Data Stores
+
+```mermaid
+flowchart LR
+    U(("Learner"))
+
+    subgraph Sys[Duolingo Clone System]
+        P1["1.0\nBrowse Path"]
+        P2["2.0\nStart Lesson"]
+        P3["3.0\nGrade Answer"]
+        P4["4.0\nComplete Lesson"]
+        P5["5.0\nManage User\n(profile / refill / reset)"]
+        P6["6.0\nView Leaderboard"]
+    end
+
+    D1[(Course Content\nCourse/Unit/Skill/Lesson/Exercise)]
+    D2[(User State\nUser, hearts, gems)]
+    D3[(Skill Progress\nUserSkillProgress)]
+    D4[(Daily Activity\nUserDailyActivity)]
+    D5[(Attempts &\nAchievements)]
+
+    U -->|select unit/skill| P1
+    P1 -->|read path + progress| D1
+    P1 -->|read progress/crowns| D3
+    P1 -->|path with statuses| U
+
+    U -->|choose lesson| P2
+    P2 -->|read lesson + exercises| D1
+    P2 -->|current hearts| D2
+    P2 -->|lesson runtime + exercises| U
+
+    U -->|submit answer| P3
+    P3 -->|read correct_answer| D1
+    P3 -->|update xp/hearts/streak| D2
+    P3 -->|update progress +/-| D3
+    P3 -->|upsert daily row| D4
+    P3 -->|grade result| U
+
+    U -->|complete lesson| P4
+    P4 -->|crown skill, unlock next| D3
+    P4 -->|+10 XP, streak| D2
+    P4 -->|insert attempt| D5
+    P4 -->|award achievements| D5
+    P4 -->|record completion XP| D4
+    P4 -->|summary + achievements| U
+
+    U -->|refill hearts (350 gems)| P5
+    P5 -->|deduct gems, set hearts| D2
+    P5 -->|new hearts/gems| U
+
+    U -->|open leaderboard| P6
+    P6 -->|read all users + XP| D2
+    P6 -->|ranked entries| U
+```
+
+#### DFD Level 2 — Lesson Answer Flow (Process 3.0 expanded)
+
+```mermaid
+flowchart LR
+    U(("Learner"))
+    R["3.1\nRoute: POST /lessons/{id}/answer"]
+    V["3.2\nValidate exercise + answer"]
+    X["3.3\nAward/Deduct\n(+5 XP, −1 heart)"]
+    S["3.4\nUpdate streak"]
+    A["3.5\nUpdate daily activity"]
+    K["3.6\nUpdate skill progress"]
+    C[(Course Content)]
+    U2[(User State)]
+    D4[(Daily Activity)]
+    D3[(Skill Progress)]
+
+    U -->|answer string| R
+    R -->|exercise_id + answer| V
+    V -->|correct_answer lookup| C
+    V -->|correct / incorrect| X
+    X -->|xp & hearts| U2
+    X -->|hearts_remaining| U
+    X -->|activity event| S
+    S -->|new streak| U2
+    S -->|today, streak_before/after| A
+    A -->|upsert xp/exercises/hearts_lost| D4
+    X -->|outcome| K
+    K -->|progress +20 / −10| D3
+```
+
+**How to read these DFDs**: rectangles are processes, rounded shapes are external entities (the learner), cylinders are persistent data stores, and arrows are data flows. Each process corresponds to a backend router/service — e.g. process 3.x maps to `POST /api/lessons/{id}/answer` → `LessonService.process_answer`, which is why XP, hearts, streak, daily activity, and skill progress all update in one transaction.
+
 ### Database Schema
 
 #### Course Model
